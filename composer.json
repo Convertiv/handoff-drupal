@@ -1,0 +1,21 @@
+{
+    "name": "convertiv/handoff",
+    "description": "Handoff allows Figma design tokenization and component documentation.  This module leverages the Handoff api to automatically pull and transform handoff components into Drupal Single Directory Components",
+    "type": "library",
+    "require": {
+        "salesforce/handlebars-php": "^3.0",
+        "composer/semver": "^3.4"
+    },
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "Convertiv\\Handoff\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Brad Mering",
+            "email": "brad@convertiv.com"
+        }
+    ]
+}

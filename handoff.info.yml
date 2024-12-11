@@ -1,0 +1,5 @@
+name: 'handoff'
+type: module
+description: 'Integrate handoff drush commands with the handoff api'
+package: Custom
+core_version_requirement: ^10 || ^11

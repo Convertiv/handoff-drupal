@@ -1,0 +1,15 @@
+handoff.settings:
+  type: config_object
+  label: 'Handoff Component Settings'
+  mapping:
+    api_url:
+      type: text
+      label: 'Handoff Api Url'
+    theme: 
+      type: text
+      label: 'Handoff Theme'
+    theme_path:
+      type: text
+      label: 'Handoff Theme Path'
+    
+
