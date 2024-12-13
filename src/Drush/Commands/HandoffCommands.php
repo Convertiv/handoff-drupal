@@ -2,15 +2,14 @@
 
 namespace Drupal\handoff\Drush\Commands;
 
-use Consolidation\OutputFormatters\StructuredData\RowsOfFields;
 use Drupal\Component\Serialization\Yaml;
 
 use Drupal\Core\Utility\Token;
+use Drupal\handoff\TwigTranspile;
 use Drush\Attributes as CLI;
 use Drush\Commands\AutowireTrait;
 use Drush\Commands\DrushCommands;
 use GuzzleHttp\Client;
-use Handlebars\Handlebars;
 
 /**
  * A Drush commandfile.
@@ -51,13 +50,14 @@ final class HandoffCommands extends DrushCommands
   #[CLI\Argument(name: 'version', description: 'Get the component version.')]
   #[CLI\Option(name: 'force', description: 'Force the operation and overwrite the results.')]
   #[CLI\Usage(name: 'handoff:fetch-component', description: 'Get a component from Handoff and save it as a single directory component.')]
-  public function fetchComponent($name, $version = 'latest', $options = ['force' => false])
+  public function fetchComponent($name = false, $version = 'latest', $options = ['force' => false])
   {
+
     $this
-      ->setName($name)
+      ->askUrl()
+      ->askComponent($name)
       ->setVersion($version)
       ->setForce($options['force'])
-      ->askUrl()
       ->chooseTheme()
       ->fetch()
       ->validateComponent()
@@ -98,11 +98,15 @@ final class HandoffCommands extends DrushCommands
       mkdir($component_dir);
     } else {
       // if the component exists, lets parse the existing yaml file
+      // check to see if the handoff lock file exists 
+      if (!file_exists($component_dir . "/$name.handoff.yaml")) {
+        $this->logger()->error('Component already exists but the handoff file is missing');
+        return;
+      }
       $config = Yaml::decode(file_get_contents($component_dir . "/$name.handoff.yaml"));
       if ($config['version'] === $this->version) {
         if (!$this->force) {
-          $this->logger()->error('Component already exists and the version is unchanged');
-          return;
+          throw new \Exception('Component already exists and the version is unchanged');
         } else {
           $this->logger()->warning('Component already exists and the version is unchanged. Force option is enabled.');
         }
@@ -115,7 +119,7 @@ final class HandoffCommands extends DrushCommands
           $this->logger()->warning('Do you want to overwrite the component?');
           $overwrite = $this->io()->confirm('Overwrite Component?', FALSE);
           if (!$overwrite) {
-            return;
+            throw new \Exception('Not overwriting the existing component');
           }
         }
       }
@@ -140,6 +144,34 @@ final class HandoffCommands extends DrushCommands
     }
     $this->base_url = $url;
     $this->client = new Client(['base_uri' => $url]);
+    return $this;
+  }
+
+  /**
+   * Ask the user for the component
+   * Pull from the list if not provided
+   *
+   * @param boolean|string $name
+   * @return this
+   */
+  public function askComponent($name = false)
+  {
+    if (!$name) {
+      try {
+        $this->io()->text('Fetching list of supported components');
+        $response = $this->client->get("/api/components.json")->getBody()->getContents();
+        $data = json_decode($response, TRUE);
+      } catch (\Exception $e) {
+        throw new \Exception("Could not find $this->name in library.");
+      }
+      $component_choices = [];
+      foreach ($data as $id => $item) {
+        $id = $item['id'];
+        $component_choices[$id] = $id . ' - ' . $item['title'];
+      }
+      $this->name = $name = $this->io()->choice('Select a component to import', $component_choices);
+    }
+    $this->setName($name);
     return $this;
   }
 
@@ -257,42 +289,15 @@ final class HandoffCommands extends DrushCommands
    */
   public function makeTwigFromComponent($component, $version)
   {
+
     $twig = "{# @file\n  * This is a component template for the {$component['title']} component\n";
     $twig .= "  * @see https://stage-ssc.handoff.com/api/component/{$component['id']}\n";
     $twig .= "  * @version $version\n";
     $twig .= "  * @date " . date('Y-m-d') . "\n";
     $twig .= "  * @author Handoff\n";
     $twig .= "  * #}\n";
-    // TODO: Convert the handlebars code into a twig template
-    // and inject the properties\
-    $handlebars = new Handlebars();
-    // Transform the handlebars code into twig
-    // First we need to find special cases like {{#each title}} and replace them with a for loop
-    $code = preg_replace_callback('/{{#each([\s\S]*?)}}([\s\S]*?){{([\s\S]*?)}}([\s\S]*?){{\/each}}/', function($match) {
-      $loop = str_replace('properties.', '', $match[1]);
-      $loop_short = $loop[0];
-      dd($match);
-      return "{% for $loop_short in $loop %} $2 {{}} $4 {% endfor %}";
-    }, $component['code']);
-    dd($code);
-    // handle if case
-    $code = preg_replace_callback('/{{#if([\s\S]*?)}}([\s\S]*?){{\/if}}/', function ($matches) {
-      $if = str_replace('properties.', '', $matches[1]);
-      return "{% if $if %} $matches[2] {% endif %}";
-    }, $code);
-    // TODO: handle other special cases (if, else, etc)
-    // build properties list 
-    $props_array = [
-      'properties' => [
-        'title_loop' => 't',
-        'title_name' => 'title',
-        'title_var' => '{{ t }}',
-      ]
-    ];
-    foreach ($component['properties'] as $key => $property) {
-      $props_array['properties'][$key] = "{{ $key }}";
-    }
-    $twig .= $handlebars->render($code, $props_array);
+    $transpiler = new TwigTranspile($component['code']);
+    $twig .= $transpiler->render();
     // Write the component twig to the component directory
     file_put_contents($this->component_dir . "/$this->name.twig", $twig);
     return $this;
