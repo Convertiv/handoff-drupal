@@ -16,6 +16,13 @@ it manually for now
 3. Install it via drush or the module page
 4. Run composer install in your drupal root to ensure dependencies are loaded
 
+## Commands
+
+Available commands for the "handoff" namespace:
+  handoff:fetch   Get a component from Handoff and save it as a single directory component.
+  handoff:styles  Update the shared styles from Handoff.
+  handoff:config  Update handoff configuration with a new url and base theme.
+
 ## USAGE
 
 This script is going to attempt to pull a component down from the handoff API
@@ -59,7 +66,7 @@ for the component.
 ## Next steps
 - Version the shared styles and check when fetching if upstreams styles have changed
 - Improve the twig transpiler to handle handlebar partials
-- Generate use documentation when the script fetches the component
+- ~~Generate use documentation when the script fetches the component~~
 - Build diff comparisons when upgrading a component
 - Document limitations in handlebar ingest
 - Build out documentation and mapping examples of how you can use this

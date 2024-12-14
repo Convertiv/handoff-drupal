@@ -45,11 +45,53 @@ final class HandoffCommands extends DrushCommands
   /**
    * Command description here.
    */
-  #[CLI\Command(name: 'handoff:fetch-component', aliases: ['handoff:fetch', 'fetch-component'])]
+  #[CLI\Command(name: 'handoff:config')]
+  #[CLI\Help('Update handoff configuration with a new url and base theme.')]
+  #[CLI\Usage(name: 'handoff:config', description: 'Set the Handoff API URL.')]
+  public function changeConfig()
+  {
+    $config = $this->handoff_config;
+    $this->askUrl(TRUE)->chooseTheme(TRUE);
+    $this->io()->text([
+      'Handoff API URL set successfully.',
+    ]);
+  }
+
+  /**
+   * Update the shared styles from Handoff
+   */
+  #[CLI\Command(name: 'handoff:styles')]
+  #[CLI\Help('Update the shared styles from Handoff.')]
+  #[CLI\Argument(name: 'version', description: 'Get the component version.')]
+  #[CLI\Option(name: 'force', description: 'Force the operation and overwrite the results.')]
+  #[CLI\Usage(name: 'handoff:styles', description: 'Update the shared styles from Handoff.')]
+  #[CLI\Usage(name: 'handoff:styles version', description: 'Update the shared styles from Handoff to a specific version.')]
+  #[CLI\Usage(name: 'handoff:styles version --force', description: 'Force command to update the shared styles from Handoff to a specific version.')]
+  public function fetchStyles($version = 'latest', $options = ['force' => false])
+  {
+    $this
+      ->askUrl()
+      ->setVersion($version)
+      ->setForce($options['force'])
+      ->chooseTheme()
+      ->getSharedCSS();
+    $this->io()->text([
+      'Shared styles updated successfully.',
+    ]);
+  }
+
+  /**
+   * Command description here.
+   */
+  #[CLI\Command(name: 'handoff:fetch')]
+  #[CLI\Help('Get a component from Handoff and save it as a single directory component.')]
   #[CLI\Argument(name: 'name', description: 'Get the component name.')]
   #[CLI\Argument(name: 'version', description: 'Get the component version.')]
   #[CLI\Option(name: 'force', description: 'Force the operation and overwrite the results.')]
-  #[CLI\Usage(name: 'handoff:fetch-component', description: 'Get a component from Handoff and save it as a single directory component.')]
+  #[CLI\Usage(name: 'handoff:fetch', description: 'Get a list of components and select one to fetch.')]
+  #[CLI\Usage(name: 'handoff:fetch component_name', description: 'Get a component from Handoff and save it as a single directory component.')]
+  #[CLI\Usage(name: 'handoff:fetch component_name version', description: 'Get a specific version of a component from Handoff and save it as a single directory component.')]
+  #[CLI\Usage(name: 'handoff:fetch component_name version --force', description: 'Force command to get a specific version of a component from Handoff and save it as a single directory component.')]
   public function fetchComponent($name = false, $version = 'latest', $options = ['force' => false])
   {
 
@@ -63,17 +105,20 @@ final class HandoffCommands extends DrushCommands
       ->validateComponent()
       ->exportComponent();
 
-    $this->io()->text([
+    $exampleUsage = [
       'Component exported successfully.',
       'Component: ' . $this->component['title'],
       'Version: ' . $version,
       'You can use the component by including it in your twig file like so:',
       "",
-      "{{ include('handoff_bootstrap:$name', { ",
-      "  title_prefix: title[0], ",
-      "  title: [title[1], title[2], title[3]],",
-      "})}}",
-    ]);
+      "{{ include('handoff_bootstrap:$this->name', {"
+    ];
+    foreach ($this->component['properties'] as $property) {
+      $exampleUsage[] = "  $property[name]: \"$property[default]\",";
+    }
+    $exampleUsage[] = "})}}";
+
+    $this->io()->text($exampleUsage);
   }
 
   /**
@@ -131,14 +176,20 @@ final class HandoffCommands extends DrushCommands
    *
    * @return \Drupal\handoff\Fetch
    */
-  public function askUrl()
+  public function askUrl($reset = false)
   {
     $config = $this->handoff_config;
     $url = $config->get('api_url');
-    if ($url) {
+    if ($url && !$reset) {
       $this->io()->text("Using URL: $url");
     } else {
-      $url = $this->io()->ask('Enter the URL handoff site you want to use: (e.g. https://handoff.example.com)');
+      $url = $this->io()->ask('Enter the URL handoff site you want to use: ' . ($url ? "(current: $url )" : '(e.g. https://handoff.example.com)'));
+      if (!$url) {
+        throw new \Exception('No URL provided');
+      }
+      if (filter_var($url, FILTER_VALIDATE_URL) === FALSE) {
+        throw new \Exception('Invalid URL provided');
+      }
       $config->set('api_url', $url);
       $config->save();
     }
@@ -167,7 +218,7 @@ final class HandoffCommands extends DrushCommands
       $component_choices = [];
       foreach ($data as $id => $item) {
         $id = $item['id'];
-        $component_choices[$id] = $id . ' - ' . $item['title'];
+        $component_choices[$id] = $id . ': ' . $item['title'] . ' (' . $item['version'] . ')';
       }
       $this->name = $name = $this->io()->choice('Select a component to import', $component_choices);
     }
@@ -180,11 +231,11 @@ final class HandoffCommands extends DrushCommands
    *
    * @return Drupal\handoff\Drush\Commands\HandoffCommands
    */
-  public function chooseTheme()
+  public function chooseTheme($reset = false)
   {
     $config = $this->handoff_config;
     $theme = $config->get('theme');
-    if ($theme) {
+    if ($theme && !$reset) {
       $this->io()->text("Using theme: $theme");
       $theme_path = $config->get('theme_path');
     } else {
@@ -195,7 +246,8 @@ final class HandoffCommands extends DrushCommands
       foreach ($installed_themes as $theme) {
         $theme_choices[$theme->getName()] = $theme->getPath();
       }
-      $theme = $this->io()->choice('Select a theme', array_keys($theme_choices));
+      $themeName = $theme ? $theme->getName() : '';
+      $theme = $this->io()->choice('Select a theme ' . ($theme ? "(current: $themeName )" : ''), array_keys($theme_choices));
       $theme_path = $theme_choices[$theme];
       $config->set('theme', $theme);
       $config->set('theme_path', $theme_path);
